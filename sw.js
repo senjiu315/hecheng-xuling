@@ -1,4 +1,4 @@
-const CACHE_NAME = "hecheng-xuling-v2";
+const CACHE_NAME = "hecheng-xuling-v3";
 const ASSETS = [
   "./",
   "./index.html",
