@@ -23,11 +23,11 @@ const W = 390;
 const H = 640;
 const STORAGE_KEY = "hecheng-xuling-best";
 const BOUNDS = {
-  left: 22,
-  right: W - 22,
+  left: 32,
+  right: W - 32,
   bottom: H - 14
 };
-const DANGER_LINE = 112;
+const DANGER_LINE = 136;
 const RING_PADDING = 7;
 const MAX_SPEED = 760;
 const FIXED_STEP = 1 / 240;
@@ -213,8 +213,9 @@ function startMusic() {
 
 function pickNextLevel() {
   const roll = Math.random();
-  if (roll > 0.88) return 2;
-  if (roll > 0.55) return 1;
+  if (roll > 0.82) return 3;
+  if (roll > 0.58) return 2;
+  if (roll > 0.28) return 1;
   return 0;
 }
 
@@ -306,7 +307,7 @@ function addBurst(x, y, color) {
 
 function mergePair(a, b) {
   if (a.merging || b.merging || a.level !== b.level) return false;
-  if (a.level >= MAX_LEVEL) return clearMaxPair(a, b);
+  if (a.level >= MAX_LEVEL) return false;
   a.merging = true;
   b.merging = true;
   const level = a.level + 1;
@@ -322,21 +323,6 @@ function mergePair(a, b) {
   score += LEVELS[level].score;
   playMergeSound(level);
   addBurst(x, y, LEVELS[level].ring);
-  updateHud();
-  return true;
-}
-
-function clearMaxPair(a, b) {
-  if (a.merging || b.merging) return false;
-  a.merging = true;
-  b.merging = true;
-  const x = (a.x + b.x) / 2;
-  const y = (a.y + b.y) / 2;
-  balls = balls.filter((ball) => ball !== a && ball !== b);
-  score += LEVELS[MAX_LEVEL].score * 3;
-  playMergeSound(MAX_LEVEL);
-  addBurst(x, y, LEVELS[MAX_LEVEL].ring);
-  addBurst(x, y, "#ff78b7");
   updateHud();
   return true;
 }
@@ -417,7 +403,7 @@ function resolveBallCollisions() {
       const dist = Math.hypot(dx, dy) || 0.0001;
       const minDist = (a.cr || a.r) + (b.cr || b.r);
 
-      if (a.level === b.level && dist <= minDist + MERGE_TOLERANCE) {
+      if (a.level === b.level && a.level < MAX_LEVEL && dist <= minDist + MERGE_TOLERANCE) {
         mergePair(a, b);
         return true;
       }
@@ -434,7 +420,7 @@ function scanNearMerges() {
     for (let j = i + 1; j < balls.length; j += 1) {
       const a = balls[i];
       const b = balls[j];
-      if (!a || !b || a.merging || b.merging || a.level !== b.level) continue;
+      if (!a || !b || a.merging || b.merging || a.level !== b.level || a.level >= MAX_LEVEL) continue;
       const dist = Math.hypot(b.x - a.x, b.y - a.y);
       const mergeDistance = (a.cr || a.r) + (b.cr || b.r) + Math.max(14, Math.min(a.r, b.r) * 0.28);
       if (dist <= mergeDistance) {
@@ -461,7 +447,8 @@ function separateBalls(a, b, dx, dy, dist, minDist) {
   const total = ar + br;
   const aShare = br / total;
   const bShare = ar / total;
-  const correction = overlap + 1.2;
+  const maxPair = a.level >= MAX_LEVEL && b.level >= MAX_LEVEL;
+  const correction = overlap + (maxPair ? 4.5 : 1.2);
   a.x -= nx * correction * aShare;
   a.y -= ny * correction * aShare;
   b.x += nx * correction * bShare;
@@ -471,7 +458,7 @@ function separateBalls(a, b, dx, dy, dist, minDist) {
   const rvy = b.vy - a.vy;
   const velAlongNormal = rvx * nx + rvy * ny;
   if (velAlongNormal <= 0) {
-    const impulse = -(1.05 * velAlongNormal) / 2;
+    const impulse = -((maxPair ? 1.45 : 1.05) * velAlongNormal) / 2;
     a.vx -= impulse * nx;
     a.vy -= impulse * ny;
     b.vx += impulse * nx;
@@ -486,6 +473,14 @@ function separateBalls(a, b, dx, dy, dist, minDist) {
   a.vy += friction * ty;
   b.vx -= friction * tx;
   b.vy -= friction * ty;
+
+  if (maxPair) {
+    const shove = Math.max(6, overlap * 0.18);
+    a.vx -= nx * shove;
+    b.vx += nx * shove;
+    a.vy -= Math.abs(ny) * shove * 0.25;
+    b.vy -= Math.abs(ny) * shove * 0.25;
+  }
 }
 
 function resolveSevereOverlaps() {
@@ -500,7 +495,7 @@ function resolveSevereOverlaps() {
         const dist = Math.hypot(dx, dy) || 0.0001;
         const minDist = (a.cr || a.r) + (b.cr || b.r);
 
-        if (a.level === b.level && dist <= minDist + MERGE_TOLERANCE + 8) {
+        if (a.level === b.level && a.level < MAX_LEVEL && dist <= minDist + MERGE_TOLERANCE + 8) {
           mergePair(a, b);
           return true;
         }
