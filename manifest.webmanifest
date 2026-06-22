@@ -1,0 +1,16 @@
+{
+  "name": "合成大许澪",
+  "short_name": "合成大许澪",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#fff3fa",
+  "theme_color": "#ff8fc4",
+  "icons": [
+    {
+      "src": "./assets/photos/cover.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
