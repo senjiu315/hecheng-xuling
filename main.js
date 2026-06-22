@@ -31,7 +31,7 @@ const DANGER_LINE = 112;
 const RING_PADDING = 7;
 const MAX_SPEED = 760;
 const FIXED_STEP = 1 / 240;
-const COLLISION_ITERATIONS = 14;
+const COLLISION_ITERATIONS = 18;
 const MERGE_TOLERANCE = 12;
 const LEVELS = [
   { src: "./assets/photos/level-1.jpg", radius: 25, score: 1, ring: "#ffb6df", name: "甜心许澪" },
@@ -41,6 +41,7 @@ const LEVELS = [
   { src: "./assets/photos/level-5.jpg", radius: 70, score: 38, ring: "#9d7bff", name: "祈愿许澪" },
   { src: "./assets/photos/level-6.jpg", radius: 86, score: 88, ring: "#6edcff", name: "冰蝶许澪" }
 ];
+const MAX_LEVEL = LEVELS.length - 1;
 
 let images = [];
 let balls = [];
@@ -304,7 +305,8 @@ function addBurst(x, y, color) {
 }
 
 function mergePair(a, b) {
-  if (a.merging || b.merging || a.level !== b.level || a.level >= LEVELS.length - 1) return false;
+  if (a.merging || b.merging || a.level !== b.level) return false;
+  if (a.level >= MAX_LEVEL) return clearMaxPair(a, b);
   a.merging = true;
   b.merging = true;
   const level = a.level + 1;
@@ -320,6 +322,21 @@ function mergePair(a, b) {
   score += LEVELS[level].score;
   playMergeSound(level);
   addBurst(x, y, LEVELS[level].ring);
+  updateHud();
+  return true;
+}
+
+function clearMaxPair(a, b) {
+  if (a.merging || b.merging) return false;
+  a.merging = true;
+  b.merging = true;
+  const x = (a.x + b.x) / 2;
+  const y = (a.y + b.y) / 2;
+  balls = balls.filter((ball) => ball !== a && ball !== b);
+  score += LEVELS[MAX_LEVEL].score * 3;
+  playMergeSound(MAX_LEVEL);
+  addBurst(x, y, LEVELS[MAX_LEVEL].ring);
+  addBurst(x, y, "#ff78b7");
   updateHud();
   return true;
 }
@@ -361,6 +378,7 @@ function stepPhysicsSubstep(dt) {
 
   if (scanNearMerges()) return;
   relaxStack();
+  if (resolveSevereOverlaps()) return;
 
   finishPhysicsFrame(dt);
 }
@@ -416,7 +434,7 @@ function scanNearMerges() {
     for (let j = i + 1; j < balls.length; j += 1) {
       const a = balls[i];
       const b = balls[j];
-      if (!a || !b || a.merging || b.merging || a.level !== b.level || a.level >= LEVELS.length - 1) continue;
+      if (!a || !b || a.merging || b.merging || a.level !== b.level) continue;
       const dist = Math.hypot(b.x - a.x, b.y - a.y);
       const mergeDistance = (a.cr || a.r) + (b.cr || b.r) + Math.max(14, Math.min(a.r, b.r) * 0.28);
       if (dist <= mergeDistance) {
@@ -429,8 +447,14 @@ function scanNearMerges() {
 }
 
 function separateBalls(a, b, dx, dy, dist, minDist) {
-  const nx = dx / dist;
-  const ny = dy / dist;
+  let nx = dx / dist;
+  let ny = dy / dist;
+  if (!Number.isFinite(nx) || !Number.isFinite(ny) || Math.abs(nx) + Math.abs(ny) < 0.001) {
+    const angle = ((((a.id || 1) * 97 + (b.id || 2) * 53) % 360) * Math.PI) / 180;
+    nx = Math.cos(angle);
+    ny = Math.sin(angle);
+    dist = 0.0001;
+  }
   const overlap = minDist - dist;
   const ar = a.cr || a.r;
   const br = b.cr || b.r;
@@ -464,6 +488,48 @@ function separateBalls(a, b, dx, dy, dist, minDist) {
   b.vy -= friction * ty;
 }
 
+function resolveSevereOverlaps() {
+  for (let pass = 0; pass < 4; pass += 1) {
+    for (let i = 0; i < balls.length; i += 1) {
+      for (let j = i + 1; j < balls.length; j += 1) {
+        const a = balls[i];
+        const b = balls[j];
+        if (!a || !b || a.merging || b.merging) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        const minDist = (a.cr || a.r) + (b.cr || b.r);
+
+        if (a.level === b.level && dist <= minDist + MERGE_TOLERANCE + 8) {
+          mergePair(a, b);
+          return true;
+        }
+
+        if (dist < minDist * 0.82) {
+          separateBalls(a, b, dx, dy, dist, minDist);
+          const push = (minDist * 0.82 - dist) * 0.22;
+          let nx = dx / dist;
+          let ny = dy / dist;
+          if (!Number.isFinite(nx) || !Number.isFinite(ny) || Math.abs(nx) + Math.abs(ny) < 0.001) {
+            const angle = ((((a.id || 1) * 41 + (b.id || 2) * 83) % 360) * Math.PI) / 180;
+            nx = Math.cos(angle);
+            ny = Math.sin(angle);
+          }
+          a.x -= nx * push;
+          a.y -= ny * push;
+          b.x += nx * push;
+          b.y += ny * push;
+          a.vx -= nx * 18;
+          b.vx += nx * 18;
+          clampToBounds(a);
+          clampToBounds(b);
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function finishPhysicsFrame(dt) {
   const danger = balls.some((ball) => ball.y - (ball.cr || ball.r) < DANGER_LINE && ball.age > 0.65);
   dangerTime = danger && balls.length > 3 ? dangerTime + dt : 0;
@@ -479,7 +545,7 @@ function finishPhysicsFrame(dt) {
 }
 
 function relaxStack() {
-  for (let pass = 0; pass < 6; pass += 1) {
+  for (let pass = 0; pass < 8; pass += 1) {
     for (let i = 0; i < balls.length; i += 1) {
       for (let j = i + 1; j < balls.length; j += 1) {
         const a = balls[i];
