@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ff8fc4" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="合成大许澪" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./style.css" />
+    <title>合成大许澪</title>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="cover" id="cover">
+        <div class="cover__sparkle" aria-hidden="true"></div>
+        <img class="cover__image" src="./assets/photos/cover.jpg" alt="合成大许澪封面" />
+        <div class="cover__content">
+          <p class="eyebrow">Pink Merge Game</p>
+          <h1>合成大许澪</h1>
+          <p class="tagline">轻点屏幕投下头像，相同许澪碰到一起就会升级。</p>
+          <button class="primary-button" id="startButton" type="button">开始游戏</button>
+        </div>
+      </section>
+
+      <section class="game hidden" id="gamePanel" aria-label="合成大许澪游戏">
+        <div class="hud hud--top">
+          <div class="score-card">
+            <span>分数</span>
+            <strong id="score">0</strong>
+          </div>
+          <div class="title-chip">合成大许澪</div>
+          <div class="score-card">
+            <span>最高</span>
+            <strong id="best">0</strong>
+          </div>
+        </div>
+
+        <div class="board-wrap">
+          <canvas id="gameCanvas" width="390" height="640"></canvas>
+        </div>
+
+        <div class="hud hud--bottom">
+          <div class="next-card">
+            <span>下一个</span>
+            <img id="nextPreview" src="./assets/photos/level-1.jpg" alt="下一个许澪" />
+            <strong id="nextName">甜心许澪</strong>
+          </div>
+          <div class="button-row">
+            <button class="icon-button" id="pauseButton" type="button" aria-label="暂停">暂停</button>
+            <button class="icon-button" id="restartButton" type="button" aria-label="重新开始">重开</button>
+          </div>
+        </div>
+
+        <div class="modal hidden" id="gameOverModal" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
+          <div class="modal__panel">
+            <p class="eyebrow">Game Over</p>
+            <h2 id="gameOverTitle">许澪快满出来啦</h2>
+            <p>这局分数 <strong id="finalScore">0</strong>，再来一次冲击最大头像。</p>
+            <button class="primary-button" id="againButton" type="button">再玩一次</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="./main.js"></script>
+  </body>
+</html>
