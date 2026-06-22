@@ -39,17 +39,49 @@ let running = false;
 let lastTime = 0;
 let dangerTime = 0;
 let nextId = 1;
+let imageLoadingStarted = false;
 
 function loadImages() {
-  return Promise.all(
-    LEVELS.map((level) => new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = reject;
-      image.src = level.src;
-    }))
-  );
+  if (imageLoadingStarted) return;
+  imageLoadingStarted = true;
+  images = LEVELS.map((level) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.loading = "eager";
+    image.onload = () => render();
+    image.onerror = () => render();
+    image.src = level.src;
+    return image;
+  });
 }
+
+function preloadImagesWithTimeout(timeoutMs = 2500) {
+  loadImages();
+  const loaders = images.map((image) => new Promise((resolve) => {
+    if (image.complete) {
+      resolve();
+      return;
+    }
+    image.onload = () => {
+      render();
+      resolve();
+    };
+    image.onerror = () => resolve();
+  }));
+  return Promise.race([
+    Promise.allSettled(loaders),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs))
+  ]);
+}
+
+function warmImages() {
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(() => loadImages(), { timeout: 1200 });
+  } else {
+    setTimeout(() => loadImages(), 600);
+  }
+}
+
 
 function pickNextLevel() {
   const roll = Math.random();
@@ -396,12 +428,15 @@ canvas.addEventListener("touchmove", (event) => {
 
 startButton.addEventListener("click", async () => {
   startButton.disabled = true;
-  startButton.textContent = "加载中...";
-  if (!images.length) images = await loadImages();
+  startButton.textContent = "进入中...";
+  loadImages();
   cover.classList.add("hidden");
   gamePanel.classList.remove("hidden");
   resetGame();
   running = true;
+  startButton.disabled = false;
+  startButton.textContent = "开始游戏";
+  preloadImagesWithTimeout().finally(() => render());
 });
 
 restartButton.addEventListener("click", resetGame);
@@ -413,6 +448,7 @@ pauseButton.addEventListener("click", () => {
 });
 
 updateHud();
+warmImages();
 requestAnimationFrame(loop);
 
 if ("serviceWorker" in navigator) {
