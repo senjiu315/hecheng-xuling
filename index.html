@@ -7,7 +7,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="合成大许澪" />
     <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="stylesheet" href="./style.css?v=4" />
+    <link rel="stylesheet" href="./style.css?v=5" />
     <title>合成大许澪</title>
   </head>
   <body>
@@ -57,12 +57,16 @@
           <div class="modal__panel">
             <p class="eyebrow">Game Over</p>
             <h2 id="gameOverTitle">许澪快满出来啦</h2>
-            <p>这局分数 <strong id="finalScore">0</strong>，再来一次冲击最大头像。</p>
+            <p id="gameOverText">这局分数 <strong id="finalScore">0</strong>，再来一次冲击最大头像。</p>
+            <div class="revive-actions hidden" id="reviveActions">
+              <button class="primary-button" id="reviveYesButton" type="button">是</button>
+              <button class="icon-button" id="reviveNoButton" type="button">不是</button>
+            </div>
             <button class="primary-button" id="againButton" type="button">再玩一次</button>
           </div>
         </div>
       </section>
     </main>
-    <script src="./main.js?v=4"></script>
+    <script src="./main.js?v=5"></script>
   </body>
 </html>
