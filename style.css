@@ -291,6 +291,18 @@ h1 {
   color: var(--pink-dark);
 }
 
+.revive-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
+.revive-actions .primary-button,
+.revive-actions .icon-button {
+  min-width: 92px;
+}
+
 @media (max-width: 390px) {
   .game {
     padding-inline: 8px;
