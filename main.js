@@ -40,6 +40,8 @@ const LEVELS = [
   { src: "./assets/photos/level-4.jpg", radius: 56, score: 18, ring: "#ffd166", name: "花束许澪" },
   { src: "./assets/photos/level-5.jpg", radius: 70, score: 38, ring: "#9d7bff", name: "祈愿许澪" },
   { src: "./assets/photos/level-6.jpg", radius: 86, score: 88, ring: "#6edcff", name: "冰蝶许澪" }
+  ,
+  { src: "./assets/photos/level-7.jpg", radius: 98, score: 180, ring: "#ff4f9f", name: "缁堟瀬璁告惊" }
 ];
 const MAX_LEVEL = LEVELS.length - 1;
 
@@ -698,7 +700,7 @@ function drawBall(ball, alpha = 1) {
   ctx.font = `${Math.max(18, ball.r * 0.42)}px Georgia`;
   ctx.lineWidth = 4;
   ctx.strokeStyle = "#fff";
-  ctx.fillStyle = ball.level === 5 ? "#47bdf2" : "#ff65ad";
+  ctx.fillStyle = ball.level >= MAX_LEVEL ? "#47bdf2" : "#ff65ad";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const icon = ball.level % 2 === 0 ? "♡" : "✦";
