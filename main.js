@@ -3,6 +3,7 @@ const ctx = canvas.getContext("2d");
 const cover = document.querySelector("#cover");
 const gamePanel = document.querySelector("#gamePanel");
 const startButton = document.querySelector("#startButton");
+const soundButton = document.querySelector("#soundButton");
 const pauseButton = document.querySelector("#pauseButton");
 const restartButton = document.querySelector("#restartButton");
 const againButton = document.querySelector("#againButton");
@@ -49,6 +50,14 @@ let lastTime = 0;
 let dangerTime = 0;
 let nextId = 1;
 let imageLoadingStarted = false;
+let isAiming = false;
+let audioCtx = null;
+let masterGain = null;
+let musicGain = null;
+let musicTimer = null;
+let soundEnabled = true;
+let musicStep = 0;
+const MUSIC_NOTES = [523.25, 659.25, 783.99, 987.77, 880.0, 783.99, 659.25, 587.33];
 
 function loadImages() {
   if (imageLoadingStarted) return;
@@ -89,6 +98,88 @@ function warmImages() {
   } else {
     setTimeout(() => loadImages(), 600);
   }
+}
+
+function ensureAudio() {
+  if (!audioCtx) {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return false;
+    audioCtx = new AudioCtor();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = soundEnabled ? 0.42 : 0;
+    masterGain.connect(audioCtx.destination);
+    musicGain = audioCtx.createGain();
+    musicGain.gain.value = 0.08;
+    musicGain.connect(masterGain);
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return true;
+}
+
+function setSoundEnabled(enabled) {
+  soundEnabled = enabled;
+  if (masterGain) {
+    masterGain.gain.setTargetAtTime(enabled ? 0.42 : 0, audioCtx.currentTime, 0.03);
+  }
+  if (soundButton) soundButton.textContent = enabled ? "静音" : "音乐";
+}
+
+function playTone(freq, duration = 0.14, type = "sine", volume = 0.22, startOffset = 0) {
+  if (!soundEnabled || !ensureAudio()) return;
+  const t = audioCtx.currentTime + startOffset;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(volume, t + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+  osc.connect(gain);
+  gain.connect(masterGain);
+  osc.start(t);
+  osc.stop(t + duration + 0.02);
+}
+
+function playDropSound() {
+  playTone(392, 0.08, "triangle", 0.12);
+  playTone(523.25, 0.11, "sine", 0.08, 0.035);
+}
+
+function playMergeSound(level) {
+  const base = 523.25 + level * 55;
+  playTone(base, 0.1, "sine", 0.16);
+  playTone(base * 1.25, 0.13, "triangle", 0.13, 0.055);
+  playTone(base * 1.5, 0.16, "sine", 0.1, 0.12);
+}
+
+function playButtonSound() {
+  playTone(880, 0.07, "sine", 0.08);
+}
+
+function playGameOverSound() {
+  playTone(392, 0.16, "triangle", 0.14);
+  playTone(329.63, 0.22, "sine", 0.1, 0.13);
+}
+
+function startMusic() {
+  if (!ensureAudio() || musicTimer) return;
+  musicTimer = setInterval(() => {
+    if (!soundEnabled || paused || gameOver || !running) return;
+    const freq = MUSIC_NOTES[musicStep % MUSIC_NOTES.length];
+    musicStep += 1;
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+    osc.connect(gain);
+    gain.connect(musicGain);
+    osc.start(t);
+    osc.stop(t + 0.45);
+  }, 420);
 }
 
 
@@ -146,6 +237,7 @@ function spawnBall(x, y, level) {
 function dropBall() {
   if (!canDrop || paused || gameOver) return;
   spawnBall(dropX, 86, nextLevel);
+  playDropSound();
   nextLevel = pickNextLevel();
   canDrop = false;
   setTimeout(() => {
@@ -184,6 +276,7 @@ function mergePair(a, b) {
   created.vx = vx;
   created.vy = vy;
   score += LEVELS[level].score;
+  playMergeSound(level);
   addBurst(x, y, LEVELS[level].ring);
   updateHud();
   return true;
@@ -312,6 +405,7 @@ function finishPhysicsFrame(dt) {
   if (dangerTime > 1.8) {
     gameOver = true;
     canDrop = false;
+    playGameOverSound();
     updateHud();
   }
 
@@ -423,6 +517,13 @@ function drawBall(ball, alpha = 1) {
 }
 
 function render() {
+  window.__hechengDebug = {
+    ballCount: balls.length,
+    score,
+    canDrop,
+    isAiming,
+    soundEnabled
+  };
   drawBackground();
 
   const preview = { x: dropX, y: 52, r: LEVELS[nextLevel].radius, level: nextLevel };
@@ -481,17 +582,36 @@ function movePointer(event) {
   dropX = Math.max(34 + level.radius, Math.min(W - 34 - level.radius, canvasPoint(event)));
 }
 
-canvas.addEventListener("pointermove", movePointer);
 canvas.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  isAiming = true;
   movePointer(event);
+  canvas.setPointerCapture?.(event.pointerId);
+});
+canvas.addEventListener("pointermove", (event) => {
+  if (!isAiming && event.pointerType === "touch") return;
+  event.preventDefault();
+  movePointer(event);
+});
+canvas.addEventListener("pointerup", (event) => {
+  if (!isAiming) return;
+  event.preventDefault();
+  movePointer(event);
+  isAiming = false;
+  canvas.releasePointerCapture?.(event.pointerId);
   dropBall();
+});
+canvas.addEventListener("pointercancel", () => {
+  isAiming = false;
 });
 canvas.addEventListener("touchmove", (event) => {
   event.preventDefault();
-  movePointer(event);
 }, { passive: false });
 
 startButton.addEventListener("click", async () => {
+  playButtonSound();
+  ensureAudio();
+  startMusic();
   startButton.disabled = true;
   startButton.textContent = "进入中...";
   loadImages();
@@ -504,10 +624,22 @@ startButton.addEventListener("click", async () => {
   preloadImagesWithTimeout().finally(() => render());
 });
 
-restartButton.addEventListener("click", resetGame);
-againButton.addEventListener("click", resetGame);
+restartButton.addEventListener("click", () => {
+  playButtonSound();
+  resetGame();
+});
+againButton.addEventListener("click", () => {
+  playButtonSound();
+  resetGame();
+});
+soundButton?.addEventListener("click", () => {
+  ensureAudio();
+  setSoundEnabled(!soundEnabled);
+  playButtonSound();
+});
 pauseButton.addEventListener("click", () => {
   if (gameOver) return;
+  playButtonSound();
   paused = !paused;
   updateHud();
 });
