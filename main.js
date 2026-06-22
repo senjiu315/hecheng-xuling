@@ -28,10 +28,11 @@ const BOUNDS = {
   bottom: H - 14
 };
 const DANGER_LINE = 112;
-const MAX_SPEED = 860;
-const FIXED_STEP = 1 / 180;
-const COLLISION_ITERATIONS = 9;
-const MERGE_TOLERANCE = 8;
+const RING_PADDING = 7;
+const MAX_SPEED = 760;
+const FIXED_STEP = 1 / 240;
+const COLLISION_ITERATIONS = 14;
+const MERGE_TOLERANCE = 12;
 const LEVELS = [
   { src: "./assets/photos/level-1.jpg", radius: 25, score: 1, ring: "#ffb6df", name: "甜心许澪" },
   { src: "./assets/photos/level-2.jpg", radius: 34, score: 3, ring: "#ff8fc4", name: "粉发许澪" },
@@ -119,10 +120,10 @@ function ensureAudio() {
     if (!AudioCtor) return false;
     audioCtx = new AudioCtor();
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = soundEnabled ? 0.78 : 0;
+    masterGain.gain.value = soundEnabled ? 1.35 : 0;
     masterGain.connect(audioCtx.destination);
     musicGain = audioCtx.createGain();
-    musicGain.gain.value = 0.18;
+    musicGain.gain.value = 0.32;
     musicGain.connect(masterGain);
   }
   if (audioCtx.state === "suspended") audioCtx.resume();
@@ -132,7 +133,7 @@ function ensureAudio() {
 function setSoundEnabled(enabled) {
   soundEnabled = enabled;
   if (masterGain) {
-    masterGain.gain.setTargetAtTime(enabled ? 0.78 : 0, audioCtx.currentTime, 0.03);
+    masterGain.gain.setTargetAtTime(enabled ? 1.35 : 0, audioCtx.currentTime, 0.03);
   }
   if (soundButton) soundButton.textContent = enabled ? "静音" : "音乐";
 }
@@ -154,22 +155,22 @@ function playTone(freq, duration = 0.14, type = "sine", volume = 0.22, startOffs
 }
 
 function playDropSound() {
-  playTone(330, 0.06, "triangle", 0.18);
-  playTone(523.25, 0.1, "sine", 0.16, 0.025);
-  playTone(784, 0.12, "triangle", 0.08, 0.055);
+  playTone(330, 0.06, "triangle", 0.28);
+  playTone(523.25, 0.1, "sine", 0.24, 0.025);
+  playTone(784, 0.12, "triangle", 0.14, 0.055);
 }
 
 function playMergeSound(level) {
   const base = 523.25 + level * 55;
-  playTone(base * 0.75, 0.14, "triangle", 0.18);
-  playTone(base, 0.16, "sine", 0.2, 0.035);
-  playTone(base * 1.25, 0.18, "triangle", 0.16, 0.08);
-  playTone(base * 1.5, 0.22, "sine", 0.12, 0.14);
+  playTone(base * 0.75, 0.14, "triangle", 0.3);
+  playTone(base, 0.16, "sine", 0.32, 0.035);
+  playTone(base * 1.25, 0.18, "triangle", 0.26, 0.08);
+  playTone(base * 1.5, 0.22, "sine", 0.2, 0.14);
 }
 
 function playButtonSound() {
-  playTone(880, 0.06, "sine", 0.14);
-  playTone(1174.66, 0.08, "triangle", 0.08, 0.035);
+  playTone(880, 0.06, "sine", 0.22);
+  playTone(1174.66, 0.08, "triangle", 0.16, 0.035);
 }
 
 function playGameOverSound() {
@@ -197,14 +198,14 @@ function startMusic() {
       osc.type = index === 0 ? "triangle" : "sine";
       osc.frequency.setValueAtTime(freq, t);
       gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(index === 0 ? 0.18 : 0.11, t + 0.025);
+      gain.gain.exponentialRampToValueAtTime(index === 0 ? 0.28 : 0.2, t + 0.025);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.58);
       osc.connect(gain);
       gain.connect(musicGain);
       osc.start(t);
       osc.stop(t + 0.62);
     });
-    playTone(chord[0] / 2, 0.2, "sine", 0.08, 0.02);
+    playTone(chord[0] / 2, 0.2, "sine", 0.16, 0.02);
   }, 560);
 }
 
@@ -268,6 +269,7 @@ function spawnBall(x, y, level) {
     vy: 0,
     level,
     r: def.radius,
+    cr: def.radius + RING_PADDING,
     merging: false,
     age: 0,
     grounded: false
@@ -364,23 +366,24 @@ function stepPhysicsSubstep(dt) {
 }
 
 function clampToBounds(ball) {
-  if (ball.x - ball.r < BOUNDS.left) {
-    ball.x = BOUNDS.left + ball.r;
+  const radius = ball.cr || ball.r;
+  if (ball.x - radius < BOUNDS.left) {
+    ball.x = BOUNDS.left + radius;
     ball.vx = Math.abs(ball.vx) * 0.45;
   }
-  if (ball.x + ball.r > BOUNDS.right) {
-    ball.x = BOUNDS.right - ball.r;
+  if (ball.x + radius > BOUNDS.right) {
+    ball.x = BOUNDS.right - radius;
     ball.vx = -Math.abs(ball.vx) * 0.45;
   }
-  if (ball.y + ball.r > BOUNDS.bottom) {
-    ball.y = BOUNDS.bottom - ball.r;
+  if (ball.y + radius > BOUNDS.bottom) {
+    ball.y = BOUNDS.bottom - radius;
     ball.vy = Math.min(-Math.abs(ball.vy) * 0.22, 0);
     if (Math.abs(ball.vy) < 24) ball.vy = 0;
     ball.vx *= 0.9;
     ball.grounded = true;
   }
-  if (ball.y - ball.r < 54 && ball.age > 0.35) {
-    ball.y = 54 + ball.r;
+  if (ball.y - radius < 54 && ball.age > 0.35) {
+    ball.y = 54 + radius;
     ball.vy = Math.abs(ball.vy) * 0.25;
   }
 }
@@ -394,7 +397,7 @@ function resolveBallCollisions() {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy) || 0.0001;
-      const minDist = a.r + b.r;
+      const minDist = (a.cr || a.r) + (b.cr || b.r);
 
       if (a.level === b.level && dist <= minDist + MERGE_TOLERANCE) {
         mergePair(a, b);
@@ -415,7 +418,7 @@ function scanNearMerges() {
       const b = balls[j];
       if (!a || !b || a.merging || b.merging || a.level !== b.level || a.level >= LEVELS.length - 1) continue;
       const dist = Math.hypot(b.x - a.x, b.y - a.y);
-      const mergeDistance = a.r + b.r + Math.max(10, Math.min(a.r, b.r) * 0.22);
+      const mergeDistance = (a.cr || a.r) + (b.cr || b.r) + Math.max(14, Math.min(a.r, b.r) * 0.28);
       if (dist <= mergeDistance) {
         mergePair(a, b);
         return true;
@@ -429,10 +432,12 @@ function separateBalls(a, b, dx, dy, dist, minDist) {
   const nx = dx / dist;
   const ny = dy / dist;
   const overlap = minDist - dist;
-  const total = a.r + b.r;
-  const aShare = b.r / total;
-  const bShare = a.r / total;
-  const correction = overlap + 0.45;
+  const ar = a.cr || a.r;
+  const br = b.cr || b.r;
+  const total = ar + br;
+  const aShare = br / total;
+  const bShare = ar / total;
+  const correction = overlap + 1.2;
   a.x -= nx * correction * aShare;
   a.y -= ny * correction * aShare;
   b.x += nx * correction * bShare;
@@ -460,9 +465,9 @@ function separateBalls(a, b, dx, dy, dist, minDist) {
 }
 
 function finishPhysicsFrame(dt) {
-  const danger = balls.some((ball) => ball.y - ball.r < DANGER_LINE && ball.age > 0.9 && Math.abs(ball.vy) < 120);
-  dangerTime = danger && balls.length > 4 ? dangerTime + dt : 0;
-  if (dangerTime > 1.0) triggerFailure();
+  const danger = balls.some((ball) => ball.y - (ball.cr || ball.r) < DANGER_LINE && ball.age > 0.65);
+  dangerTime = danger && balls.length > 3 ? dangerTime + dt : 0;
+  if (dangerTime > 0.45) triggerFailure();
 
   for (const p of particles) {
     p.life -= dt;
@@ -474,7 +479,7 @@ function finishPhysicsFrame(dt) {
 }
 
 function relaxStack() {
-  for (let pass = 0; pass < 3; pass += 1) {
+  for (let pass = 0; pass < 6; pass += 1) {
     for (let i = 0; i < balls.length; i += 1) {
       for (let j = i + 1; j < balls.length; j += 1) {
         const a = balls[i];
@@ -483,8 +488,20 @@ function relaxStack() {
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.hypot(dx, dy) || 0.0001;
-        const minDist = a.r + b.r;
-        if (dist < minDist * 0.985) separateBalls(a, b, dx, dy, dist, minDist);
+        const minDist = (a.cr || a.r) + (b.cr || b.r);
+        if (dist < minDist * 0.998) {
+          separateBalls(a, b, dx, dy, dist, minDist);
+          if (Math.abs(dx) < minDist * 0.22 && Math.abs(dy) < minDist * 0.55) {
+            const push = (minDist * 0.22 - Math.abs(dx)) * 0.18;
+            const dir = a.x <= b.x ? -1 : 1;
+            a.x += dir * push;
+            b.x -= dir * push;
+            a.vx += dir * 8;
+            b.vx -= dir * 8;
+            clampToBounds(a);
+            clampToBounds(b);
+          }
+        }
       }
     }
   }
@@ -512,8 +529,9 @@ function reviveGame() {
     .sort((a, b) => b.y - a.y || b.r - a.r)
     .slice(0, keepCount);
   for (const ball of balls) {
-    if (ball.y - ball.r < DANGER_LINE + 70) {
-      ball.y = DANGER_LINE + 70 + ball.r;
+    const radius = ball.cr || ball.r;
+    if (ball.y - radius < DANGER_LINE + 82) {
+      ball.y = DANGER_LINE + 82 + radius;
       ball.vy = Math.max(40, ball.vy);
     }
     clampToBounds(ball);
