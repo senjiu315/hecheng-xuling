@@ -16,6 +16,15 @@ const modal = document.querySelector("#gameOverModal");
 const W = 390;
 const H = 640;
 const STORAGE_KEY = "hecheng-xuling-best";
+const BOUNDS = {
+  left: 22,
+  right: W - 22,
+  bottom: H - 14
+};
+const MAX_SPEED = 980;
+const FIXED_STEP = 1 / 120;
+const COLLISION_ITERATIONS = 5;
+const MERGE_TOLERANCE = 3.5;
 const LEVELS = [
   { src: "./assets/photos/level-1.jpg", radius: 25, score: 1, ring: "#ffb6df", name: "甜心许澪" },
   { src: "./assets/photos/level-2.jpg", radius: 34, score: 3, ring: "#ff8fc4", name: "粉发许澪" },
@@ -129,7 +138,8 @@ function spawnBall(x, y, level) {
     level,
     r: def.radius,
     merging: false,
-    age: 0
+    age: 0,
+    grounded: false
   });
 }
 
@@ -166,8 +176,13 @@ function mergePair(a, b) {
   const level = a.level + 1;
   const x = (a.x + b.x) / 2;
   const y = (a.y + b.y) / 2;
+  const vx = (a.vx + b.vx) * 0.25;
+  const vy = Math.min((a.vy + b.vy) * 0.2, 180);
   balls = balls.filter((ball) => ball !== a && ball !== b);
   spawnBall(x, y, level);
+  const created = balls[balls.length - 1];
+  created.vx = vx;
+  created.vy = vy;
   score += LEVELS[level].score;
   addBurst(x, y, LEVELS[level].ring);
   updateHud();
@@ -175,73 +190,123 @@ function mergePair(a, b) {
 }
 
 function stepPhysics(dt) {
+  let remaining = Math.min(dt, 0.05);
+  while (remaining > 0) {
+    const step = Math.min(FIXED_STEP, remaining);
+    stepPhysicsSubstep(step);
+    remaining -= step;
+  }
+}
+
+function stepPhysicsSubstep(dt) {
   const gravity = 980;
-  const left = 22;
-  const right = W - 22;
-  const bottom = H - 14;
-  const damp = 0.992;
+  const damp = 0.996;
 
   for (const ball of balls) {
     ball.age += dt;
+    ball.grounded = false;
     ball.vy += gravity * dt;
+    const speed = Math.hypot(ball.vx, ball.vy);
+    if (speed > MAX_SPEED) {
+      const scale = MAX_SPEED / speed;
+      ball.vx *= scale;
+      ball.vy *= scale;
+    }
     ball.vx *= damp;
     ball.vy *= 0.998;
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
-
-    if (ball.x - ball.r < left) {
-      ball.x = left + ball.r;
-      ball.vx = Math.abs(ball.vx) * 0.58;
-    }
-    if (ball.x + ball.r > right) {
-      ball.x = right - ball.r;
-      ball.vx = -Math.abs(ball.vx) * 0.58;
-    }
-    if (ball.y + ball.r > bottom) {
-      ball.y = bottom - ball.r;
-      ball.vy = -Math.abs(ball.vy) * 0.36;
-      ball.vx *= 0.94;
-    }
+    clampToBounds(ball);
   }
 
+  for (let iteration = 0; iteration < COLLISION_ITERATIONS; iteration += 1) {
+    if (resolveBallCollisions()) return;
+    for (const ball of balls) clampToBounds(ball);
+  }
+
+  finishPhysicsFrame(dt);
+}
+
+function clampToBounds(ball) {
+  if (ball.x - ball.r < BOUNDS.left) {
+    ball.x = BOUNDS.left + ball.r;
+    ball.vx = Math.abs(ball.vx) * 0.45;
+  }
+  if (ball.x + ball.r > BOUNDS.right) {
+    ball.x = BOUNDS.right - ball.r;
+    ball.vx = -Math.abs(ball.vx) * 0.45;
+  }
+  if (ball.y + ball.r > BOUNDS.bottom) {
+    ball.y = BOUNDS.bottom - ball.r;
+    ball.vy = Math.min(-Math.abs(ball.vy) * 0.22, 0);
+    if (Math.abs(ball.vy) < 24) ball.vy = 0;
+    ball.vx *= 0.9;
+    ball.grounded = true;
+  }
+  if (ball.y - ball.r < 54 && ball.age > 0.35) {
+    ball.y = 54 + ball.r;
+    ball.vy = Math.abs(ball.vy) * 0.25;
+  }
+}
+
+function resolveBallCollisions() {
   for (let i = 0; i < balls.length; i += 1) {
     for (let j = i + 1; j < balls.length; j += 1) {
       const a = balls[i];
       const b = balls[j];
+      if (!a || !b || a.merging || b.merging) continue;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy) || 0.0001;
       const minDist = a.r + b.r;
-      if (dist >= minDist) continue;
 
-      if (a.level === b.level && Math.abs(a.vx - b.vx) + Math.abs(a.vy - b.vy) < 1600) {
+      if (a.level === b.level && dist <= minDist + MERGE_TOLERANCE) {
         mergePair(a, b);
-        return;
+        return true;
       }
 
-      const nx = dx / dist;
-      const ny = dy / dist;
-      const overlap = minDist - dist;
-      const total = a.r + b.r;
-      const aShare = b.r / total;
-      const bShare = a.r / total;
-      a.x -= nx * overlap * aShare;
-      a.y -= ny * overlap * aShare;
-      b.x += nx * overlap * bShare;
-      b.y += ny * overlap * bShare;
-
-      const rvx = b.vx - a.vx;
-      const rvy = b.vy - a.vy;
-      const velAlongNormal = rvx * nx + rvy * ny;
-      if (velAlongNormal > 0) continue;
-      const impulse = -(1.18 * velAlongNormal) / 2;
-      a.vx -= impulse * nx;
-      a.vy -= impulse * ny;
-      b.vx += impulse * nx;
-      b.vy += impulse * ny;
+      if (dist >= minDist) continue;
+      separateBalls(a, b, dx, dy, dist, minDist);
     }
   }
+  return false;
+}
 
+function separateBalls(a, b, dx, dy, dist, minDist) {
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const overlap = minDist - dist;
+  const total = a.r + b.r;
+  const aShare = b.r / total;
+  const bShare = a.r / total;
+  const correction = overlap + 0.45;
+  a.x -= nx * correction * aShare;
+  a.y -= ny * correction * aShare;
+  b.x += nx * correction * bShare;
+  b.y += ny * correction * bShare;
+
+  const rvx = b.vx - a.vx;
+  const rvy = b.vy - a.vy;
+  const velAlongNormal = rvx * nx + rvy * ny;
+  if (velAlongNormal <= 0) {
+    const impulse = -(1.05 * velAlongNormal) / 2;
+    a.vx -= impulse * nx;
+    a.vy -= impulse * ny;
+    b.vx += impulse * nx;
+    b.vy += impulse * ny;
+  }
+
+  const tx = -ny;
+  const ty = nx;
+  const tangentSpeed = (b.vx - a.vx) * tx + (b.vy - a.vy) * ty;
+  const friction = tangentSpeed * 0.025;
+  a.vx += friction * tx;
+  a.vy += friction * ty;
+  b.vx -= friction * tx;
+  b.vy -= friction * ty;
+}
+
+function finishPhysicsFrame(dt) {
   const danger = balls.some((ball) => ball.y - ball.r < 112 && ball.age > 1.2);
   dangerTime = danger && balls.length > 6 ? dangerTime + dt : 0;
   if (dangerTime > 1.8) {
