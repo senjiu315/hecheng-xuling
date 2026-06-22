@@ -1,4 +1,4 @@
-const CACHE_NAME = "hecheng-xuling-v8";
+const CACHE_NAME = "hecheng-xuling-v9";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,7 +11,8 @@ const ASSETS = [
   "./assets/photos/level-3.jpg",
   "./assets/photos/level-4.jpg",
   "./assets/photos/level-5.jpg",
-  "./assets/photos/level-6.jpg"
+  "./assets/photos/level-6.jpg",
+  "./assets/photos/level-7.jpg"
 ];
 
 self.addEventListener("install", (event) => {
