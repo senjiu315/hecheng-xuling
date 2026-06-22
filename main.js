@@ -7,12 +7,17 @@ const soundButton = document.querySelector("#soundButton");
 const pauseButton = document.querySelector("#pauseButton");
 const restartButton = document.querySelector("#restartButton");
 const againButton = document.querySelector("#againButton");
+const reviveYesButton = document.querySelector("#reviveYesButton");
+const reviveNoButton = document.querySelector("#reviveNoButton");
 const scoreEl = document.querySelector("#score");
 const bestEl = document.querySelector("#best");
-const finalScoreEl = document.querySelector("#finalScore");
+let finalScoreEl = document.querySelector("#finalScore");
 const nextPreview = document.querySelector("#nextPreview");
 const nextName = document.querySelector("#nextName");
 const modal = document.querySelector("#gameOverModal");
+const gameOverTitle = document.querySelector("#gameOverTitle");
+const gameOverText = document.querySelector("#gameOverText");
+const reviveActions = document.querySelector("#reviveActions");
 
 const W = 390;
 const H = 640;
@@ -22,10 +27,11 @@ const BOUNDS = {
   right: W - 22,
   bottom: H - 14
 };
-const MAX_SPEED = 980;
-const FIXED_STEP = 1 / 120;
-const COLLISION_ITERATIONS = 5;
-const MERGE_TOLERANCE = 3.5;
+const DANGER_LINE = 112;
+const MAX_SPEED = 860;
+const FIXED_STEP = 1 / 180;
+const COLLISION_ITERATIONS = 9;
+const MERGE_TOLERANCE = 8;
 const LEVELS = [
   { src: "./assets/photos/level-1.jpg", radius: 25, score: 1, ring: "#ffb6df", name: "甜心许澪" },
   { src: "./assets/photos/level-2.jpg", radius: 34, score: 3, ring: "#ff8fc4", name: "粉发许澪" },
@@ -45,6 +51,8 @@ let dropX = W / 2;
 let canDrop = true;
 let paused = false;
 let gameOver = false;
+let revivePrompt = false;
+let reviveUsed = false;
 let running = false;
 let lastTime = 0;
 let dangerTime = 0;
@@ -57,7 +65,12 @@ let musicGain = null;
 let musicTimer = null;
 let soundEnabled = true;
 let musicStep = 0;
-const MUSIC_NOTES = [523.25, 659.25, 783.99, 987.77, 880.0, 783.99, 659.25, 587.33];
+const MUSIC_CHORDS = [
+  [523.25, 659.25, 783.99],
+  [587.33, 739.99, 880.0],
+  [493.88, 659.25, 783.99],
+  [440.0, 554.37, 659.25]
+];
 
 function loadImages() {
   if (imageLoadingStarted) return;
@@ -106,10 +119,10 @@ function ensureAudio() {
     if (!AudioCtor) return false;
     audioCtx = new AudioCtor();
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = soundEnabled ? 0.42 : 0;
+    masterGain.gain.value = soundEnabled ? 0.78 : 0;
     masterGain.connect(audioCtx.destination);
     musicGain = audioCtx.createGain();
-    musicGain.gain.value = 0.08;
+    musicGain.gain.value = 0.18;
     musicGain.connect(masterGain);
   }
   if (audioCtx.state === "suspended") audioCtx.resume();
@@ -119,7 +132,7 @@ function ensureAudio() {
 function setSoundEnabled(enabled) {
   soundEnabled = enabled;
   if (masterGain) {
-    masterGain.gain.setTargetAtTime(enabled ? 0.42 : 0, audioCtx.currentTime, 0.03);
+    masterGain.gain.setTargetAtTime(enabled ? 0.78 : 0, audioCtx.currentTime, 0.03);
   }
   if (soundButton) soundButton.textContent = enabled ? "静音" : "音乐";
 }
@@ -141,45 +154,58 @@ function playTone(freq, duration = 0.14, type = "sine", volume = 0.22, startOffs
 }
 
 function playDropSound() {
-  playTone(392, 0.08, "triangle", 0.12);
-  playTone(523.25, 0.11, "sine", 0.08, 0.035);
+  playTone(330, 0.06, "triangle", 0.18);
+  playTone(523.25, 0.1, "sine", 0.16, 0.025);
+  playTone(784, 0.12, "triangle", 0.08, 0.055);
 }
 
 function playMergeSound(level) {
   const base = 523.25 + level * 55;
-  playTone(base, 0.1, "sine", 0.16);
-  playTone(base * 1.25, 0.13, "triangle", 0.13, 0.055);
-  playTone(base * 1.5, 0.16, "sine", 0.1, 0.12);
+  playTone(base * 0.75, 0.14, "triangle", 0.18);
+  playTone(base, 0.16, "sine", 0.2, 0.035);
+  playTone(base * 1.25, 0.18, "triangle", 0.16, 0.08);
+  playTone(base * 1.5, 0.22, "sine", 0.12, 0.14);
 }
 
 function playButtonSound() {
-  playTone(880, 0.07, "sine", 0.08);
+  playTone(880, 0.06, "sine", 0.14);
+  playTone(1174.66, 0.08, "triangle", 0.08, 0.035);
 }
 
 function playGameOverSound() {
-  playTone(392, 0.16, "triangle", 0.14);
-  playTone(329.63, 0.22, "sine", 0.1, 0.13);
+  playTone(440, 0.12, "triangle", 0.16);
+  playTone(392, 0.18, "sine", 0.16, 0.1);
+  playTone(329.63, 0.28, "triangle", 0.14, 0.22);
+}
+
+function playReviveSound() {
+  playTone(659.25, 0.12, "sine", 0.18);
+  playTone(880, 0.14, "triangle", 0.18, 0.08);
+  playTone(1318.51, 0.22, "sine", 0.12, 0.17);
 }
 
 function startMusic() {
   if (!ensureAudio() || musicTimer) return;
   musicTimer = setInterval(() => {
     if (!soundEnabled || paused || gameOver || !running) return;
-    const freq = MUSIC_NOTES[musicStep % MUSIC_NOTES.length];
+    const chord = MUSIC_CHORDS[musicStep % MUSIC_CHORDS.length];
     musicStep += 1;
-    const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(freq, t);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
-    osc.connect(gain);
-    gain.connect(musicGain);
-    osc.start(t);
-    osc.stop(t + 0.45);
-  }, 420);
+    chord.forEach((freq, index) => {
+      const t = audioCtx.currentTime + index * 0.035;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = index === 0 ? "triangle" : "sine";
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(index === 0 ? 0.18 : 0.11, t + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.58);
+      osc.connect(gain);
+      gain.connect(musicGain);
+      osc.start(t);
+      osc.stop(t + 0.62);
+    });
+    playTone(chord[0] / 2, 0.2, "sine", 0.08, 0.02);
+  }, 560);
 }
 
 
@@ -203,6 +229,18 @@ function updateHud() {
   nextName.textContent = next.name;
   pauseButton.textContent = paused ? "继续" : "暂停";
   modal.classList.toggle("hidden", !gameOver);
+  if (revivePrompt) {
+    gameOverTitle.textContent = "森玖是世界上最帅的人吗";
+    gameOverText.textContent = "答对就获得一次复活机会。";
+    reviveActions.classList.remove("hidden");
+    againButton.classList.add("hidden");
+  } else {
+    gameOverTitle.textContent = "许澪快满出来啦";
+    gameOverText.innerHTML = `这局分数 <strong id="finalScore">${score}</strong>，再来一次冲击最大头像。`;
+    finalScoreEl = document.querySelector("#finalScore");
+    reviveActions.classList.add("hidden");
+    againButton.classList.remove("hidden");
+  }
 }
 
 function resetGame() {
@@ -214,6 +252,8 @@ function resetGame() {
   canDrop = true;
   paused = false;
   gameOver = false;
+  revivePrompt = false;
+  reviveUsed = false;
   dangerTime = 0;
   updateHud();
 }
@@ -317,6 +357,9 @@ function stepPhysicsSubstep(dt) {
     for (const ball of balls) clampToBounds(ball);
   }
 
+  if (scanNearMerges()) return;
+  relaxStack();
+
   finishPhysicsFrame(dt);
 }
 
@@ -365,6 +408,23 @@ function resolveBallCollisions() {
   return false;
 }
 
+function scanNearMerges() {
+  for (let i = 0; i < balls.length; i += 1) {
+    for (let j = i + 1; j < balls.length; j += 1) {
+      const a = balls[i];
+      const b = balls[j];
+      if (!a || !b || a.merging || b.merging || a.level !== b.level || a.level >= LEVELS.length - 1) continue;
+      const dist = Math.hypot(b.x - a.x, b.y - a.y);
+      const mergeDistance = a.r + b.r + Math.max(10, Math.min(a.r, b.r) * 0.22);
+      if (dist <= mergeDistance) {
+        mergePair(a, b);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function separateBalls(a, b, dx, dy, dist, minDist) {
   const nx = dx / dist;
   const ny = dy / dist;
@@ -400,14 +460,9 @@ function separateBalls(a, b, dx, dy, dist, minDist) {
 }
 
 function finishPhysicsFrame(dt) {
-  const danger = balls.some((ball) => ball.y - ball.r < 112 && ball.age > 1.2);
-  dangerTime = danger && balls.length > 6 ? dangerTime + dt : 0;
-  if (dangerTime > 1.8) {
-    gameOver = true;
-    canDrop = false;
-    playGameOverSound();
-    updateHud();
-  }
+  const danger = balls.some((ball) => ball.y - ball.r < DANGER_LINE && ball.age > 0.9 && Math.abs(ball.vy) < 120);
+  dangerTime = danger && balls.length > 4 ? dangerTime + dt : 0;
+  if (dangerTime > 1.0) triggerFailure();
 
   for (const p of particles) {
     p.life -= dt;
@@ -416,6 +471,63 @@ function finishPhysicsFrame(dt) {
     p.vy += 150 * dt;
   }
   particles = particles.filter((p) => p.life > 0);
+}
+
+function relaxStack() {
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (let i = 0; i < balls.length; i += 1) {
+      for (let j = i + 1; j < balls.length; j += 1) {
+        const a = balls[i];
+        const b = balls[j];
+        if (!a || !b || a.merging || b.merging) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        const minDist = a.r + b.r;
+        if (dist < minDist * 0.985) separateBalls(a, b, dx, dy, dist, minDist);
+      }
+    }
+  }
+}
+
+function triggerFailure() {
+  if (gameOver) return;
+  gameOver = true;
+  canDrop = false;
+  isAiming = false;
+  revivePrompt = !reviveUsed;
+  playGameOverSound();
+  updateHud();
+}
+
+function reviveGame() {
+  reviveUsed = true;
+  revivePrompt = false;
+  gameOver = false;
+  paused = false;
+  canDrop = true;
+  dangerTime = 0;
+  const keepCount = Math.max(3, Math.ceil(balls.length * 0.55));
+  balls = balls
+    .sort((a, b) => b.y - a.y || b.r - a.r)
+    .slice(0, keepCount);
+  for (const ball of balls) {
+    if (ball.y - ball.r < DANGER_LINE + 70) {
+      ball.y = DANGER_LINE + 70 + ball.r;
+      ball.vy = Math.max(40, ball.vy);
+    }
+    clampToBounds(ball);
+  }
+  addBurst(W / 2, H * 0.36, "#ff78b7");
+  playReviveSound();
+  updateHud();
+}
+
+function finalizeFailure() {
+  revivePrompt = false;
+  gameOver = true;
+  canDrop = false;
+  updateHud();
 }
 
 function drawBackground() {
@@ -631,6 +743,14 @@ restartButton.addEventListener("click", () => {
 againButton.addEventListener("click", () => {
   playButtonSound();
   resetGame();
+});
+reviveYesButton?.addEventListener("click", () => {
+  playButtonSound();
+  reviveGame();
+});
+reviveNoButton?.addEventListener("click", () => {
+  playButtonSound();
+  finalizeFailure();
 });
 soundButton?.addEventListener("click", () => {
   ensureAudio();
